@@ -190,6 +190,11 @@ def train(
     model = accelerator.prepare_model(base_model)
     unwrapped_model = accelerator.unwrap(model)
     unwrapped_model.train()
+    
+    if hasattr(unwrapped_model, "gradient_checkpointing_enable"):
+        unwrapped_model.gradient_checkpointing_enable()
+        if accelerator.rank == 0:
+            print("Gradient checkpointing enabled for memory efficiency.", file=sys.stderr)
 
     # Only print param info on rank 0 to avoid cluttered output
     if accelerator.rank == 0:

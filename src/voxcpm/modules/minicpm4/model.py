@@ -351,6 +351,13 @@ class MiniCPMModel(nn.Module):
             self.rope_emb = MiniCPMLongRoPE(config)
 
         self.kv_cache = None
+        self.gradient_checkpointing = False
+
+    def gradient_checkpointing_enable(self):
+        self.gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self):
+        self.gradient_checkpointing = False
 
     def forward(
         self,
@@ -374,13 +381,25 @@ class MiniCPMModel(nn.Module):
 
         next_decoder_cache = []
 
+        import torch.utils.checkpoint as cp
         for decoder_layer in self.layers:
+            if getattr(self, "gradient_checkpointing", False) and self.training:
+                def create_custom_forward(module, pos_emb, causal):
+                    def custom_forward(hidden_states_in):
+                        return module(hidden_states_in, pos_emb, causal)
+                    return custom_forward
 
-            hidden_states, this_cache = decoder_layer(
-                hidden_states,
-                position_emb,
-                is_causal,
-            )
+                hidden_states, this_cache = cp.checkpoint(
+                    create_custom_forward(decoder_layer, position_emb, is_causal),
+                    hidden_states,
+                    use_reentrant=False
+                )
+            else:
+                hidden_states, this_cache = decoder_layer(
+                    hidden_states,
+                    position_emb,
+                    is_causal,
+                )
             next_decoder_cache.append(this_cache)
         hidden_states = self.norm(hidden_states)
         return hidden_states, next_decoder_cache

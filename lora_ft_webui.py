@@ -10,6 +10,8 @@ import torch
 from pathlib import Path
 from typing import Optional
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 # Add src to sys.path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))

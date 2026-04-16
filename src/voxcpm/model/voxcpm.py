@@ -210,6 +210,28 @@ class VoxCPMModel(nn.Module):
                 if isinstance(module, nn.Linear):
                     setattr(self, attr_name, LoRALinear(base=module, **lora_kwargs))
 
+    def gradient_checkpointing_enable(self):
+        """Enable gradient checkpointing for memory efficient training."""
+        if hasattr(self.base_lm, "gradient_checkpointing_enable"):
+            self.base_lm.gradient_checkpointing_enable()
+        if hasattr(self.residual_lm, "gradient_checkpointing_enable"):
+            self.residual_lm.gradient_checkpointing_enable()
+        if hasattr(self.feat_encoder, "encoder") and hasattr(self.feat_encoder.encoder, "gradient_checkpointing_enable"):
+            self.feat_encoder.encoder.gradient_checkpointing_enable()
+        if hasattr(self.feat_decoder.estimator, "decoder") and hasattr(self.feat_decoder.estimator.decoder, "gradient_checkpointing_enable"):
+            self.feat_decoder.estimator.decoder.gradient_checkpointing_enable()
+
+    def gradient_checkpointing_disable(self):
+        """Disable gradient checkpointing."""
+        if hasattr(self.base_lm, "gradient_checkpointing_disable"):
+            self.base_lm.gradient_checkpointing_disable()
+        if hasattr(self.residual_lm, "gradient_checkpointing_disable"):
+            self.residual_lm.gradient_checkpointing_disable()
+        if hasattr(self.feat_encoder, "encoder") and hasattr(self.feat_encoder.encoder, "gradient_checkpointing_disable"):
+            self.feat_encoder.encoder.gradient_checkpointing_disable()
+        if hasattr(self.feat_decoder.estimator, "decoder") and hasattr(self.feat_decoder.estimator.decoder, "gradient_checkpointing_disable"):
+            self.feat_decoder.estimator.decoder.gradient_checkpointing_disable()
+
     def optimize(self, disable: bool = False):
         if disable:
             return self
