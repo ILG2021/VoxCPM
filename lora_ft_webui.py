@@ -97,8 +97,7 @@ training_process: Optional[subprocess.Popen] = None
 training_log = ""
 
 
-def get_timestamp_str():
-    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
 
 
 def detect_sample_rate(pretrained_path: str) -> Optional[int]:
@@ -485,11 +484,11 @@ def start_training(
         print(f"[warmup] auto warmup_steps = {warmup_steps} (5% of {num_iters} total steps)", file=sys.stderr)
 
     if output_name and output_name.strip():
-        timestamp = output_name.strip()
+        output_dir_name = output_name.strip()
     else:
-        timestamp = get_timestamp_str()
+        output_dir_name = "finetune_lora"
 
-    save_dir = os.path.join("lora", timestamp)
+    save_dir = os.path.join("lora", output_dir_name)
     checkpoints_dir = os.path.join(save_dir, "checkpoints")
     logs_dir = os.path.join(save_dir, "logs")
 
@@ -586,7 +585,7 @@ def start_training(
 
     threading.Thread(target=run_process, daemon=True).start()
 
-    return f"Training started! Check 'lora/{timestamp}'"
+    return f"Training started! Check 'lora/{output_dir_name}'"
 
 
 def get_training_log():
