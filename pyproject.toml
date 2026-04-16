@@ -34,7 +34,6 @@ dependencies = [
     "inflect",
     "addict",
     "wetext",
-    "modelscope>=1.22.0",
     "datasets>=3,<4",
     "huggingface-hub",
     "pydantic",
@@ -44,8 +43,8 @@ dependencies = [
     "soundfile",
     "librosa",
     "matplotlib",
-    "funasr",
-    "spaces",
+    "deepfilternet",
+    "funasr @ git+https://github.com/ILG2021/FunASR",
     "argbind",
     "safetensors"
 

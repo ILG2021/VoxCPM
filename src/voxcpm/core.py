@@ -15,7 +15,7 @@ class VoxCPM:
     def __init__(
         self,
         voxcpm_model_path: str,
-        zipenhancer_model_path: str | None = "iic/speech_zipenhancer_ans_multiloss_16k_base",
+        zipenhancer_model_path: str | None = None,
         enable_denoiser: bool = True,
         optimize: bool = True,
         device: str | None = None,
@@ -28,8 +28,9 @@ class VoxCPM:
             voxcpm_model_path: Local filesystem path to the VoxCPM model assets
                 (weights, configs, etc.). Typically the directory returned by
                 a prior download step.
-            zipenhancer_model_path: ModelScope acoustic noise suppression model
-                id or local path. If None, denoiser will not be initialized.
+            zipenhancer_model_path: DeepFilterNet model variant name
+                (e.g. ``"DeepFilterNet3"``) or a local model directory path.
+                Pass ``None`` to skip denoiser initialisation.
             enable_denoiser: Whether to initialize the denoiser pipeline.
             optimize: Whether to optimize the model with torch.compile. True by default, but can be disabled for debugging.
             device: Runtime device. If set to ``None`` or ``"auto"``, VoxCPM
@@ -105,7 +106,7 @@ class VoxCPM:
         cls,
         hf_model_id: str = "openbmb/VoxCPM2",
         load_denoiser: bool = True,
-        zipenhancer_model_id: str = "iic/speech_zipenhancer_ans_multiloss_16k_base",
+        zipenhancer_model_id: str = None,
         cache_dir: str = None,
         local_files_only: bool = False,
         optimize: bool = True,
@@ -120,8 +121,10 @@ class VoxCPM:
             hf_model_id: Explicit Hugging Face repository id (e.g. "org/repo") or local path.
             load_denoiser: Whether to initialize the denoiser pipeline.
             optimize: Whether to optimize the model with torch.compile. True by default, but can be disabled for debugging.
-            zipenhancer_model_id: Denoiser model id or path for ModelScope
-                acoustic noise suppression.
+            zipenhancer_model_id: DeepFilterNet model variant name
+                (``"DeepFilterNet"``, ``"DeepFilterNet2"``, or
+                ``"DeepFilterNet3"``) or a local DeepFilterNet model directory.
+                Defaults to ``None`` (best available default).
             cache_dir: Custom cache directory for the snapshot.
             local_files_only: If True, only use local files and do not attempt
                 to download.

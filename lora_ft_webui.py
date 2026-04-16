@@ -218,6 +218,67 @@ def get_default_lora_config():
     )
 
 
+def prepare_manifest_with_ref(manifest_path: str, ref_ratio: float) -> str:
+    """Read a JSONL manifest and inject ref_audio for `ref_ratio` fraction of samples.
+
+    Rules:
+    - Samples that already have a non-empty ``ref_audio`` field are left unchanged.
+    - For samples selected for ref injection, a different sample is chosen at random
+      from the same manifest (index != current), ensuring ref != target.
+    - ref_ratio=0 returns the original path unchanged (no preprocessing).
+    - The processed manifest is written to ``<original_stem>_with_ref.jsonl``
+      next to the original file so the source is never modified.
+
+    Returns the path to the processed manifest (or original if ref_ratio==0).
+    """
+    import json as _json
+    import random as _random
+    from pathlib import Path as _Path
+
+    if ref_ratio <= 0:
+        return manifest_path
+
+    src = _Path(manifest_path)
+    with open(src, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f if line.strip()]
+
+    samples = [_json.loads(l) for l in lines]
+    n = len(samples)
+    if n < 2:
+        print("[ref_audio] manifest has < 2 samples — skipping ref injection.", file=sys.stderr)
+        return manifest_path
+
+    target_count = max(0, int(round(n * ref_ratio / 100.0)))
+    # Indices that don't already have a valid ref_audio
+    eligible = [i for i, s in enumerate(samples) if not s.get("ref_audio")]
+    _random.shuffle(eligible)
+    inject_indices = set(eligible[:target_count])
+
+    audio_paths = [s.get("audio", "") for s in samples]
+
+    injected = 0
+    for i in inject_indices:
+        # pick a random different index
+        candidates = [j for j in range(n) if j != i]
+        if not candidates:
+            continue
+        ref_idx = _random.choice(candidates)
+        samples[i]["ref_audio"] = audio_paths[ref_idx]
+        injected += 1
+
+    dst = src.with_stem(src.stem + "_with_ref") if hasattr(src, "with_stem") else src.with_name(src.stem + "_with_ref" + src.suffix)
+    with open(dst, "w", encoding="utf-8") as f:
+        for s in samples:
+            f.write(_json.dumps(s, ensure_ascii=False) + "\n")
+
+    print(
+        f"[ref_audio] {injected}/{n} samples injected with ref_audio "
+        f"(ratio={ref_ratio}%). Saved to: {dst}",
+        file=sys.stderr,
+    )
+    return str(dst)
+
+
 def load_model(pretrained_path, lora_path=None):
     global current_model
     print(f"Loading model from {pretrained_path}...", file=sys.stderr)
@@ -380,11 +441,42 @@ def start_training(
     # Distribution options
     hf_model_id="",
     distribute=False,
+    # ref_audio strategy
+    ref_audio_ratio=60,
+    # epoch-based iteration
+    num_epochs=0,
 ):
     global training_log
 
     if training_process is not None and training_process.poll() is None:
         return "Training is already running!"
+
+    # Pre-process manifests: inject ref_audio according to ratio.
+    # Applied to both train and val so their loss distributions remain comparable.
+    train_manifest = prepare_manifest_with_ref(train_manifest, float(ref_audio_ratio))
+    if val_manifest and val_manifest.strip():
+        val_manifest = prepare_manifest_with_ref(val_manifest, float(ref_audio_ratio))
+
+    # Auto-calculate num_iters from epochs when num_epochs >= 1
+    num_epochs = int(num_epochs or -1)
+    if num_epochs >= 1:
+        try:
+            with open(train_manifest, "r", encoding="utf-8") as _f:
+                n_samples = sum(1 for _l in _f if _l.strip())
+            _accum = max(1, int(grad_accum_steps))
+            _bs = max(1, int(batch_size))
+            steps_per_epoch = max(1, -(-n_samples // _bs))  # ceil division
+            # grad_accum means the optimizer steps every accum batches
+            optimizer_steps_per_epoch = max(1, -(-steps_per_epoch // _accum))
+            num_iters = optimizer_steps_per_epoch * num_epochs
+            print(
+                f"[epochs] {n_samples} samples, batch={_bs}, accum={_accum} "
+                f"→ {optimizer_steps_per_epoch} opt-steps/epoch × {num_epochs} epochs "
+                f"= {num_iters} total steps",
+                file=sys.stderr,
+            )
+        except Exception as _e:
+            print(f"[epochs] Failed to count manifest lines: {_e}", file=sys.stderr)
 
     if output_name and output_name.strip():
         timestamp = output_name.strip()
@@ -916,16 +1008,24 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
 
                     with gr.Row():
                         lr = gr.Number(label="📈 学习率 (Learning Rate)", value=1e-4, elem_classes="input-field")
+                        num_epochs = gr.Number(
+                            label="🔁 训练轮数 (Epochs, -1=按步数走)",
+                            value=2,
+                            minimum=-1,
+                            precision=0,
+                            elem_classes="input-field",
+                            info="≥1 时自动根据数据集大小计算总步数，会覆盖下方的最大迭代次数；-1 则按下方步数走",
+                        )
                         num_iters = gr.Number(
-                            label="🔄 最大迭代次数", value=2000, precision=0, elem_classes="input-field"
+                            label="🔄 最大迭代次数 (Epochs=-1 时生效)", value=2000, precision=0, elem_classes="input-field"
                         )
                         batch_size = gr.Number(
-                            label="📦 批次大小 (Batch Size)", value=1, precision=0, elem_classes="input-field"
+                            label="📦 批次大小 (Batch Size)", value=2, precision=0, elem_classes="input-field"
                         )
 
                     with gr.Row():
-                        lora_rank = gr.Number(label="🎯 LoRA Rank", value=32, precision=0, elem_classes="input-field")
-                        lora_alpha = gr.Number(label="⚖️ LoRA Alpha", value=16, precision=0, elem_classes="input-field")
+                        lora_rank = gr.Number(label="🎯 LoRA Rank", value=64, precision=0, elem_classes="input-field")
+                        lora_alpha = gr.Number(label="⚖️ LoRA Alpha", value=64, precision=0, elem_classes="input-field")
                         save_interval = gr.Number(
                             label="💾 保存间隔 (Steps)", value=1000, precision=0, elem_classes="input-field"
                         )
@@ -940,7 +1040,7 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
 
                     with gr.Accordion("🔧 高级选项 (Advanced)", open=False, elem_classes="accordion"):
                         with gr.Row():
-                            grad_accum_steps = gr.Number(label="梯度累积 (grad_accum_steps)", value=1, precision=0)
+                            grad_accum_steps = gr.Number(label="梯度累积 (grad_accum_steps)", value=8, precision=0)
                             num_workers = gr.Number(label="数据加载线程 (num_workers)", value=2, precision=0)
                             log_interval = gr.Number(label="日志间隔 (log_interval)", value=10, precision=0)
                         with gr.Row():
@@ -958,6 +1058,16 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                         with gr.Row():
                             enable_proj = gr.Checkbox(label="启用投影 (enable_proj)", value=False)
                             dropout = gr.Number(label="LoRA Dropout", value=0.0)
+
+                        gr.Markdown("#### 参考音频策略 (ref_audio)")
+                        ref_audio_ratio = gr.Slider(
+                            label="带参考音频的样本比例 (ref_audio_ratio %)",
+                            minimum=0,
+                            maximum=100,
+                            value=60,
+                            step=5,
+                            info="训练前自动从 manifest 中随机为指定比例的样本注入 ref_audio（从同数据集随机选取不同样本）。0 = 不处理，100 = 全部注入。推荐 50~70%。",
+                        )
 
                         gr.Markdown("#### 分发选项 (Distribution)")
                         with gr.Row():
@@ -1021,6 +1131,10 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                     # distribution
                     hf_model_id,
                     distribute,
+                    # ref_audio strategy
+                    ref_audio_ratio,
+                    # epoch-based iteration
+                    num_epochs,
                 ],
                 outputs=[logs_out],  # Initial message
             )
