@@ -69,6 +69,7 @@ def train(
     # Distribution options (for LoRA checkpoints)
     hf_model_id: str = "",  # HuggingFace model ID (e.g., "openbmb/VoxCPM1.5")
     distribute: bool = False,  # If True, save hf_model_id as base_model; otherwise save pretrained_path
+    use_8bit_adam: bool = False,  # Use bitsandbytes 8-bit optimizer
 ):
     _ = config_path
 
@@ -201,7 +202,20 @@ def train(
         for name, param in model.named_parameters():
             print(name, param.requires_grad, file=sys.stderr)
 
-    optimizer = AdamW(
+    if use_8bit_adam:
+        try:
+            import bitsandbytes as bnb
+            optimizer_cls = bnb.optim.AdamW8bit
+            if accelerator.rank == 0:
+                print("Using bitsandbytes 8-bit AdamW optimizer.", file=sys.stderr)
+        except ImportError:
+            if accelerator.rank == 0:
+                print("Warning: bitsandbytes not found, falling back to torch AdamW.", file=sys.stderr)
+            from torch.optim import AdamW as optimizer_cls
+    else:
+        from torch.optim import AdamW as optimizer_cls
+
+    optimizer = optimizer_cls(
         (p for p in model.parameters() if p.requires_grad),
         lr=learning_rate,
         weight_decay=weight_decay,

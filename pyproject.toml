@@ -46,7 +46,8 @@ dependencies = [
     "deepfilternet",
     "funasr @ git+https://github.com/ILG2021/FunASR",
     "argbind",
-    "safetensors"
+    "safetensors",
+    "bitsandbytes"
 
 ]
 
