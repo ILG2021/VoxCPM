@@ -15,8 +15,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
 # Default pretrained model path: prefer VoxCPM2 if it exists, fallback to VoxCPM1.5
-_v2_path = project_root / "models" / "openbmb__VoxCPM2"
-_v15_path = project_root / "models" / "openbmb__VoxCPM1.5"
+_v2_path = project_root / "models" / "VoxCPM2"
+_v15_path = project_root / "models" / "VoxCPM1.5"
 default_pretrained_path = str(_v2_path if _v2_path.exists() else _v15_path)
 
 from voxcpm.core import VoxCPM
@@ -477,6 +477,12 @@ def start_training(
             )
         except Exception as _e:
             print(f"[epochs] Failed to count manifest lines: {_e}", file=sys.stderr)
+
+    # Auto-calculate warmup_steps when set to 0
+    warmup_steps = int(warmup_steps or 0)
+    if warmup_steps <= 0:
+        warmup_steps = max(50, int(round(num_iters * 0.05)))
+        print(f"[warmup] auto warmup_steps = {warmup_steps} (5% of {num_iters} total steps)", file=sys.stderr)
 
     if output_name and output_name.strip():
         timestamp = output_name.strip()
@@ -999,10 +1005,10 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                     )
                     train_manifest = gr.Textbox(
                         label="📋 训练数据清单 (jsonl)",
-                        value="examples/train_data_example.jsonl",
+                        value="train.jsonl",
                         elem_classes="input-field",
                     )
-                    val_manifest = gr.Textbox(label="📊 验证数据清单 (可选)", value="", elem_classes="input-field")
+                    val_manifest = gr.Textbox(label="📊 验证数据清单 (可选)", value="val.jsonl", elem_classes="input-field")
 
                     gr.Markdown("#### ⚙️ 训练参数")
 
@@ -1046,10 +1052,15 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                         with gr.Row():
                             valid_interval = gr.Number(label="验证间隔 (valid_interval)", value=1000, precision=0)
                             weight_decay = gr.Number(label="权重衰减 (weight_decay)", value=0.01)
-                            warmup_steps = gr.Number(label="warmup_steps", value=100, precision=0)
+                            warmup_steps = gr.Number(
+                                label="warmup_steps (0 = 自动 5% 总步数)",
+                                value=0,
+                                precision=0,
+                                info="0 时自动取总步数的 5%（最少 50 步），正数则直接使用设定候。",
+                            )
                         with gr.Row():
                             max_steps = gr.Number(label="最大步数 (max_steps, 0→默认num_iters)", value=0, precision=0)
-                            sample_rate = gr.Number(label="采样率 (sample_rate)", value=44100, precision=0)
+                            sample_rate = gr.Number(label="采样率 (sample_rate)", value=48000, precision=0)
                             max_grad_norm = gr.Number(label="梯度裁剪 (max_grad_norm, 0=关闭)", value=1.0)
                         with gr.Row():
                             tensorboard_path = gr.Textbox(label="Tensorboard 路径 (可选)", value="")
