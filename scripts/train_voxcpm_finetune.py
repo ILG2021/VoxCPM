@@ -617,9 +617,22 @@ def generate_sample_audio(
             with torch.no_grad():
                 with autocast_ctx:
                     gen_kwargs = dict(target_text=text, inference_timesteps=10, cfg_value=2.0)
+                    tmp_ref_path = None
                     if has_ref:
-                        gen_kwargs["reference_wav"] = cond_wav
-                    generated = unwrapped_model.generate(**gen_kwargs)
+                        import tempfile
+                        import torchaudio
+                        import os
+                        fd, tmp_ref_path = tempfile.mkstemp(suffix=".wav")
+                        os.close(fd)
+                        torchaudio.save(tmp_ref_path, cond_wav.cpu(), sample_rate)
+                        gen_kwargs["reference_wav_path"] = tmp_ref_path
+                    
+                    try:
+                        generated = unwrapped_model.generate(**gen_kwargs)
+                    finally:
+                        if tmp_ref_path and os.path.exists(tmp_ref_path):
+                            import os
+                            os.remove(tmp_ref_path)
 
             # Restore training setup
             # unwrapped_model.to(torch.float32)
