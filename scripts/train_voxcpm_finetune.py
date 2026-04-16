@@ -567,7 +567,7 @@ def generate_sample_audio(
         sample = val_ds[i]
         text = val_texts[i] if val_texts and i < len(val_texts) else "Hello, this is a test."
 
-        # Load reference audio
+        # ── 1. Load ground-truth (GT) audio for mel comparison ──────────
         ref_audio_np = None
         try:
             if "audio" in sample and isinstance(sample["audio"], dict) and "array" in sample["audio"]:
@@ -575,23 +575,40 @@ def generate_sample_audio(
                 ref_sr = sample["audio"].get("sampling_rate", sample_rate)
                 if ref_sr != sample_rate:
                     import torchaudio.functional as F
-
                     ref_audio_np = (
                         F.resample(torch.from_numpy(ref_audio_np).unsqueeze(0), ref_sr, sample_rate).squeeze(0).numpy()
                     )
-                log(f"[Audio] Loaded reference audio for sample {i}: duration={len(ref_audio_np)/sample_rate:.2f}s")
+                log(f"[Audio] Loaded GT audio for sample {i}: duration={len(ref_audio_np)/sample_rate:.2f}s")
         except Exception as e:
-            log(f"[Warning] Failed to load reference audio: {e}")
+            log(f"[Warning] Failed to load GT audio for sample {i}: {e}")
 
-        # Preserve the original mode so validation failures do not leak into training.
+        # ── 2. Load conditioning ref_audio (may differ from GT) ─────────
+        cond_wav = None
+        try:
+            cond_field = sample.get("ref_audio")
+            if isinstance(cond_field, dict) and "array" in cond_field:
+                cond_np = np.array(cond_field["array"], dtype=np.float32)
+                cond_sr = cond_field.get("sampling_rate", sample_rate)
+                if cond_sr != sample_rate:
+                    import torchaudio.functional as F
+                    cond_np = (
+                        F.resample(torch.from_numpy(cond_np).unsqueeze(0), cond_sr, sample_rate).squeeze(0).numpy()
+                    )
+                cond_wav = torch.from_numpy(cond_np).unsqueeze(0)   # [1, T]
+        except Exception as e:
+            log(f"[Warning] Failed to load conditioning ref_audio for sample {i}: {e}")
+
+        has_ref  = cond_wav is not None
+        ref_label = "with_ref" if has_ref else "no_ref"
+
+        # ── 3. Generate ──────────────────────────────────────────────────
         prev_training = unwrapped_model.training
         try:
-            # Inference setup
             unwrapped_model.eval()
             # unwrapped_model.to(torch.bfloat16)
             unwrapped_model.audio_vae = audio_vae.to(torch.float32)
 
-            log(f"[Audio] Generating sample {i} with text: '{text[:50]}...'")
+            log(f"[Audio] Generating sample {i} ({ref_label}) with text: '{text[:50]}...'")
             autocast_ctx = (
                 torch.autocast(device_type="cuda", dtype=torch.bfloat16)
                 if torch.cuda.is_available()
@@ -599,17 +616,19 @@ def generate_sample_audio(
             )
             with torch.no_grad():
                 with autocast_ctx:
-                    generated = unwrapped_model.generate(target_text=text, inference_timesteps=10, cfg_value=2.0)
+                    gen_kwargs = dict(target_text=text, inference_timesteps=10, cfg_value=2.0)
+                    if has_ref:
+                        gen_kwargs["reference_wav"] = cond_wav
+                    generated = unwrapped_model.generate(**gen_kwargs)
 
             # Restore training setup
             # unwrapped_model.to(torch.float32)
             # unwrapped_model.audio_vae = None
 
             if generated is None or len(generated) == 0:
-                log(f"[Warning] Generated audio is empty for sample {i}")
+                log(f"[Warning] Generated audio is empty for sample {i} ({ref_label})")
                 continue
 
-            # Process generated audio
             gen_audio_np = (
                 generated.cpu().float().numpy().flatten()
                 if isinstance(generated, torch.Tensor)
@@ -617,34 +636,34 @@ def generate_sample_audio(
             )
             gen_audio_np = normalize_audio(gen_audio_np)
 
-            tag = f"val_sample_{i}"
+            # ── 4. Write to TensorBoard ──────────────────────────────────
+            # Tag includes ref_label so with_ref and no_ref are separate entries
+            tag = f"val_sample_{i}/{ref_label}"
             writer.add_audio(f"{tag}/generated_audio", gen_audio_np, global_step=step, sample_rate=gen_sr)
-            log(f"[Audio] Generated audio for sample {i}: duration={len(gen_audio_np)/gen_sr:.2f}s")
+            log(f"[Audio] Generated audio for sample {i} ({ref_label}): duration={len(gen_audio_np)/gen_sr:.2f}s")
 
-            # Log reference audio (at encoder input rate, which is what val_ds provides)
+            # GT waveform (always logged regardless of ref mode)
             if ref_audio_np is not None:
                 writer.add_audio(
-                    f"{tag}/reference_audio", normalize_audio(ref_audio_np), global_step=step, sample_rate=sample_rate
+                    f"{tag}/gt_audio", normalize_audio(ref_audio_np), global_step=step, sample_rate=sample_rate
                 )
 
-            # Generate mel spectrogram figure
+            # Mel spectrogram comparison
             try:
                 mel_gen = compute_mel_spectrogram(gen_audio_np, gen_sr)
                 mel_ref = compute_mel_spectrogram(ref_audio_np, sample_rate) if ref_audio_np is not None else None
                 fig = create_mel_figure(gen_audio_np, mel_gen, gen_sr, step, ref_audio_np, mel_ref)
                 writer.add_figure(f"{tag}/mel_spectrogram", fig, global_step=step)
-                log(f"[Audio] Created mel spectrogram figure for sample {i}")
+                log(f"[Audio] Created mel spectrogram figure for sample {i} ({ref_label})")
             except Exception as e:
-                log(f"[Warning] Failed to create mel spectrogram: {e}")
+                log(f"[Warning] Failed to create mel spectrogram for sample {i}: {e}")
 
         except Exception as e:
-            log(f"[Warning] Failed to generate audio for sample {i}: {e}")
+            log(f"[Warning] Failed to generate audio for sample {i} ({ref_label}): {e}")
             import traceback
-
             traceback.print_exc()
 
         finally:
-            # Always restore the training state, even if generation fails.
             try:
                 # unwrapped_model.to(torch.float32)
                 unwrapped_model.audio_vae = None
