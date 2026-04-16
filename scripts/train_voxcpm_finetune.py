@@ -620,11 +620,12 @@ def generate_sample_audio(
                     tmp_ref_path = None
                     if has_ref:
                         import tempfile
-                        import torchaudio
+                        import soundfile as sf
                         import os
                         fd, tmp_ref_path = tempfile.mkstemp(suffix=".wav")
                         os.close(fd)
-                        torchaudio.save(tmp_ref_path, cond_wav.cpu(), sample_rate)
+                        # cond_wav is [1, T], soundfile expects [T, channels] or [T]
+                        sf.write(tmp_ref_path, cond_wav.squeeze(0).cpu().numpy(), sample_rate)
                         gen_kwargs["reference_wav_path"] = tmp_ref_path
                     
                     try:
