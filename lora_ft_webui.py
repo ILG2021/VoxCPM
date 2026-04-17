@@ -434,6 +434,7 @@ def start_training(
     sample_rate=44100,
     max_grad_norm=1.0,
     use_8bit_adam=False,
+    use_gradient_checkpointing=True,
     # LoRA advanced
     enable_lm=True,
     enable_dit=True,
@@ -544,6 +545,7 @@ def start_training(
         "max_steps": resolved_max_steps,
         "max_grad_norm": float(max_grad_norm),
         "use_8bit_adam": bool(use_8bit_adam),
+        "use_gradient_checkpointing": bool(use_gradient_checkpointing),
         "save_path": checkpoints_dir,
         "tensorboard": tensorboard_path if tensorboard_path else logs_dir,
         "lambdas": {"loss/diff": 1.0, "loss/stop": 1.0},
@@ -1065,7 +1067,8 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                             max_steps = gr.Number(label="最大步数 (max_steps, 0→默认num_iters)", value=0, precision=0)
                             sample_rate = gr.Number(label="采样率 (sample_rate)", value=48000, precision=0)
                             max_grad_norm = gr.Number(label="梯度裁剪 (max_grad_norm, 0=关闭)", value=1.0)
-                            use_8bit_adam = gr.Checkbox(label="启用 8-bit Adam优化器 (优化显存)", value=False)
+                            use_8bit_adam = gr.Checkbox(label="启用 8-bit Adam (优化显存)", value=False)
+                            use_gradient_checkpointing = gr.Checkbox(label="启用 梯度检查点 (优化显存)", value=True)
                         with gr.Row():
                             tensorboard_path = gr.Textbox(label="Tensorboard 路径 (可选)", value="")
                             enable_lm = gr.Checkbox(label="启用 LoRA LM (enable_lm)", value=True)
@@ -1139,6 +1142,7 @@ with gr.Blocks(title="VoxCPM LoRA WebUI", theme=gr.themes.Soft(), css=custom_css
                     sample_rate,
                     max_grad_norm,
                     use_8bit_adam,
+                    use_gradient_checkpointing,
                     enable_lm,
                     enable_dit,
                     enable_proj,

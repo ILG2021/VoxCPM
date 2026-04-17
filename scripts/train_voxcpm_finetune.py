@@ -70,6 +70,7 @@ def train(
     hf_model_id: str = "",  # HuggingFace model ID (e.g., "openbmb/VoxCPM1.5")
     distribute: bool = False,  # If True, save hf_model_id as base_model; otherwise save pretrained_path
     use_8bit_adam: bool = False,  # Use bitsandbytes 8-bit optimizer
+    use_gradient_checkpointing: bool = True,  # Enable gradient checkpointing
 ):
     _ = config_path
 
@@ -192,7 +193,7 @@ def train(
     unwrapped_model = accelerator.unwrap(model)
     unwrapped_model.train()
     
-    if hasattr(unwrapped_model, "gradient_checkpointing_enable"):
+    if use_gradient_checkpointing and hasattr(unwrapped_model, "gradient_checkpointing_enable"):
         unwrapped_model.gradient_checkpointing_enable()
         if accelerator.rank == 0:
             print("Gradient checkpointing enabled for memory efficiency.", file=sys.stderr)
