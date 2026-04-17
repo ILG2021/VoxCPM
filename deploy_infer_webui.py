@@ -263,7 +263,7 @@ with gr.Blocks(title="VoxCPM Inference WebUI", theme=gr.themes.Soft(), css=custo
 
                     infer_text = gr.TextArea(
                         label="💬 合成文本",
-                        value="Hello, this is a test of voice cloning using VoxCPM.",
+                        value="",
                         elem_classes="input-field",
                         lines=4,
                         placeholder="输入要合成的文本内容...",
