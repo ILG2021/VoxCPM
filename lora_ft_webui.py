@@ -345,7 +345,8 @@ def run_inference(text, prompt_wav, prompt_text, lora_selection, cfg_scale, step
         # 加载模型
         try:
             print(f"Loading base model: {base_model_path}", file=sys.stderr)
-            load_model(base_model_path)
+            lora_path = lora_selection if lora_selection and lora_selection != "None" else None
+            load_model(base_model_path, lora_path=lora_path)
             if lora_selection and lora_selection != "None":
                 print(f"Model loaded for LoRA: {lora_selection}", file=sys.stderr)
         except Exception as e:
