@@ -12,10 +12,9 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
-# Default pretrained model path: prefer VoxCPM2 if it exists, fallback to VoxCPM1.5
+# Default pretrained model path: prefer VoxCPM2 if it exists, fallback to openbmb/VoxCPM2
 _v2_path = project_root / "models" / "VoxCPM2"
-_v15_path = project_root / "models" / "VoxCPM1.5"
-default_pretrained_path = str(_v2_path if _v2_path.exists() else _v15_path)
+default_pretrained_path = str(_v2_path) if _v2_path.exists() else "openbmb/VoxCPM2"
 
 from voxcpm.core import VoxCPM
 from voxcpm.model.voxcpm import LoRAConfig
@@ -256,13 +255,6 @@ custom_css = """
 
 with gr.Blocks(title="VoxCPM Inference WebUI", theme=gr.themes.Soft(), css=custom_css) as app:
 
-    with gr.Row(elem_classes="title-section"):
-        gr.Markdown("""
-        # 🎵 VoxCPM Inference WebUI
-        ### 强大的语音克隆与合成部署工具
-        只需提供参考音频和文本即可生成高质量、神似的语音内容！
-        """)
-
     with gr.Tabs(elem_classes="tabs"):
         with gr.Tab("🎵 语音克隆与合成"):
             with gr.Row():
@@ -283,12 +275,7 @@ with gr.Blocks(title="VoxCPM Inference WebUI", theme=gr.themes.Soft(), css=custo
                     gr.Markdown("*注意：无需输入参考文本，模型会自动进行端到端音色和情绪克隆。*")
 
                 with gr.Column(scale=35, elem_classes="form-section"):
-                    gr.Markdown("#### 🤖 预训练与 LoRA 模型选择")
-
-                    pretrained_path = gr.Textbox(
-                        label="📂 预训练模型路径", value=default_pretrained_path, elem_classes="input-field",
-                        info="如果模型无法自动识别，请输入正确的 VoxCPM 路径"
-                    )
+                    gr.Markdown("#### 🤖 LoRA 模型选择")
 
                     lora_select = gr.Dropdown(
                         label="🎯 使用 LoRA 权重 (可选)",
@@ -347,7 +334,6 @@ with gr.Blocks(title="VoxCPM Inference WebUI", theme=gr.themes.Soft(), css=custo
                     cfg_scale,
                     steps,
                     seed,
-                    pretrained_path,
                 ],
                 outputs=[audio_out, status_out],
             )
