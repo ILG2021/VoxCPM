@@ -263,7 +263,7 @@ with gr.Blocks(title="VoxCPM Inference WebUI", theme=gr.themes.Soft(), css=custo
 
                     infer_text = gr.TextArea(
                         label="💬 合成文本",
-                        value="Hello, this is a test of voice cloning using VoxCPM.",
+                        value="",
                         elem_classes="input-field",
                         lines=4,
                         placeholder="输入要合成的文本内容...",
@@ -339,5 +339,18 @@ with gr.Blocks(title="VoxCPM Inference WebUI", theme=gr.themes.Soft(), css=custo
             )
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="VoxCPM Inference WebUI")
+    parser.add_argument("--root_path", type=str, default="", help="Root path for Gradio WebUI")
+    args = parser.parse_args()
+
     os.makedirs("lora", exist_ok=True)
-    app.queue().launch(server_name="0.0.0.0", server_port=7860)
+    
+    launch_kwargs = {
+        "server_name": "0.0.0.0",
+        "server_port": 7860
+    }
+    if args.root_path:
+        launch_kwargs["root_path"] = args.root_path
+
+    app.queue().launch(**launch_kwargs)
