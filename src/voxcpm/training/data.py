@@ -36,7 +36,11 @@ def load_audio_text_datasets(
     def prepare(ds: Dataset) -> Dataset:
         if audio_column not in ds.column_names:
             raise ValueError(f"Expected '{audio_column}' column in manifest.")
-        ds = ds.cast_column(audio_column, Audio(sampling_rate=sample_rate))
+        
+        is_latent = ds[0].get("is_latent", False) if len(ds) > 0 else False
+        
+        if not is_latent:
+            ds = ds.cast_column(audio_column, Audio(sampling_rate=sample_rate))
         if audio_column != DEFAULT_AUDIO_COLUMN:
             ds = ds.rename_column(audio_column, DEFAULT_AUDIO_COLUMN)
         if text_column != DEFAULT_TEXT_COLUMN:
@@ -45,7 +49,8 @@ def load_audio_text_datasets(
         # ref_audio is optional — cast to Audio if the column exists
         ref_col = ref_audio_column if ref_audio_column in ds.column_names else DEFAULT_REF_AUDIO_COLUMN
         if ref_col in ds.column_names:
-            ds = ds.cast_column(ref_col, Audio(sampling_rate=sample_rate))
+            if not is_latent:
+                ds = ds.cast_column(ref_col, Audio(sampling_rate=sample_rate))
             if ref_col != DEFAULT_REF_AUDIO_COLUMN:
                 ds = ds.rename_column(ref_col, DEFAULT_REF_AUDIO_COLUMN)
 
@@ -131,6 +136,7 @@ class HFVoxCPMDataset(TorchDataset):
     def __init__(self, dataset: Dataset):
         self.dataset = dataset
         self.has_ref_audio = DEFAULT_REF_AUDIO_COLUMN in dataset.column_names
+        self.is_latent = dataset[0].get("is_latent", False) if len(dataset) > 0 else False
 
     def __len__(self):
         return len(self.dataset)
@@ -140,14 +146,23 @@ class HFVoxCPMDataset(TorchDataset):
         audio = item[DEFAULT_AUDIO_COLUMN]
         sample = {
             "text_ids": item["text_ids"],
-            "audio_array": audio["array"],
-            "audio_sampling_rate": audio["sampling_rate"],
             "dataset_id": item.get(DEFAULT_ID_COLUMN, 0),
             "is_prompt": item.get("is_prompt", False),
         }
+        if self.is_latent:
+            sample["audio_latent"] = torch.load(audio, weights_only=True)
+            sample["audio_array"] = None
+            sample["audio_sampling_rate"] = 16000
+        else:
+            sample["audio_array"] = audio["array"]
+            sample["audio_sampling_rate"] = audio["sampling_rate"]
+            
         if self.has_ref_audio:
             ref = item.get(DEFAULT_REF_AUDIO_COLUMN)
-            sample["ref_audio_array"] = ref["array"] if ref else self._SENTINEL
+            if self.is_latent:
+                sample["ref_audio_latent"] = torch.load(ref, weights_only=True) if ref else None
+            else:
+                sample["ref_audio_array"] = ref["array"] if ref else self._SENTINEL
         return sample
 
     @staticmethod
@@ -166,25 +181,32 @@ class HFVoxCPMDataset(TorchDataset):
     @classmethod
     def collate_fn(cls, batch: List[Dict]):
         text_tensors = [torch.tensor(sample["text_ids"], dtype=torch.int32) for sample in batch]
-        audio_tensors = [torch.tensor(sample["audio_array"], dtype=torch.float32) for sample in batch]
         dataset_ids = torch.tensor([sample["dataset_id"] for sample in batch], dtype=torch.int32)
         is_prompts = [bool(sample.get("is_prompt", False)) for sample in batch]
 
         text_padded = cls.pad_sequences(text_tensors, pad_value=-100)
-        audio_padded = cls.pad_sequences(audio_tensors, pad_value=-100.0)
         task_ids = torch.ones(text_padded.size(0), dtype=torch.int32)
 
         result = {
             "text_tokens": text_padded,
-            "audio_tokens": audio_padded,
             "task_ids": task_ids,
             "dataset_ids": dataset_ids,
             "is_prompts": is_prompts,
         }
-
-        if "ref_audio_array" in batch[0]:
-            ref_tensors = [torch.tensor(s["ref_audio_array"], dtype=torch.float32) for s in batch]
-            result["ref_audio_tokens"] = cls.pad_sequences(ref_tensors, pad_value=-100.0)
+        
+        if "audio_latent" in batch[0]:
+            result["audio_latents"] = [s["audio_latent"] for s in batch]
+            result["audio_tokens"] = torch.zeros((len(batch), 1), dtype=torch.float32) # Dummy
+            if "ref_audio_latent" in batch[0]:
+                result["ref_audio_latents"] = [s.get("ref_audio_latent") for s in batch]
+        else:
+            audio_tensors = [torch.tensor(sample["audio_array"], dtype=torch.float32) for sample in batch]
+            audio_padded = cls.pad_sequences(audio_tensors, pad_value=-100.0)
+            result["audio_tokens"] = audio_padded
+            
+            if "ref_audio_array" in batch[0]:
+                ref_tensors = [torch.tensor(s["ref_audio_array"], dtype=torch.float32) for s in batch]
+                result["ref_audio_tokens"] = cls.pad_sequences(ref_tensors, pad_value=-100.0)
 
         return result
 
@@ -224,6 +246,14 @@ class BatchProcessor:
         ref_audio_tokens = None
         if "ref_audio_tokens" in batch:
             ref_audio_tokens = batch["ref_audio_tokens"].to(self.device)
+            
+        audio_latents = None
+        if "audio_latents" in batch:
+            audio_latents = [t.to(self.device) for t in batch["audio_latents"]]
+            
+        ref_audio_latents = None
+        if "ref_audio_latents" in batch:
+            ref_audio_latents = [t.to(self.device) if t is not None else None for t in batch["ref_audio_latents"]]
 
         packed = self.packer(
             audio_tokens=audio_tokens,
@@ -232,6 +262,8 @@ class BatchProcessor:
             dataset_ids=dataset_ids,
             is_prompts=batch["is_prompts"],
             ref_audio_tokens=ref_audio_tokens,
+            audio_latents=audio_latents,
+            ref_audio_latents=ref_audio_latents,
         )
         return packed
 

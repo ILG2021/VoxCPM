@@ -2,7 +2,6 @@ import os
 import sys
 import re
 import json
-import tempfile
 import numpy as np
 from typing import Generator, Optional
 from huggingface_hub import snapshot_download
@@ -15,8 +14,6 @@ class VoxCPM:
     def __init__(
         self,
         voxcpm_model_path: str,
-        zipenhancer_model_path: str | None = "iic/speech_zipenhancer_ans_multiloss_16k_base",
-        enable_denoiser: bool = True,
         optimize: bool = True,
         device: str | None = None,
         lora_config: Optional[LoRAConfig] = None,
@@ -28,9 +25,6 @@ class VoxCPM:
             voxcpm_model_path: Local filesystem path to the VoxCPM model assets
                 (weights, configs, etc.). Typically the directory returned by
                 a prior download step.
-            zipenhancer_model_path: ModelScope acoustic noise suppression model
-                id or local path. If None, denoiser will not be initialized.
-            enable_denoiser: Whether to initialize the denoiser pipeline.
             optimize: Whether to optimize the model with torch.compile. True by default, but can be disabled for debugging.
             device: Runtime device. If set to ``None`` or ``"auto"``, VoxCPM
                 will choose automatically (preferring CUDA, then MPS, then CPU).
@@ -41,7 +35,7 @@ class VoxCPM:
                 containing lora_weights.ckpt). If provided, LoRA weights will be loaded.
         """
         print(
-            f"voxcpm_model_path: {voxcpm_model_path}, zipenhancer_model_path: {zipenhancer_model_path}, enable_denoiser: {enable_denoiser}",
+            f"voxcpm_model_path: {voxcpm_model_path}, optimize: {optimize}",
             file=sys.stderr,
         )
 
@@ -86,13 +80,6 @@ class VoxCPM:
             print(f"Loaded {len(loaded_keys)} LoRA parameters, skipped {len(skipped_keys)}", file=sys.stderr)
 
         self.text_normalizer = None
-        self.denoiser = None
-        if enable_denoiser and zipenhancer_model_path is not None:
-            from .zipenhancer import ZipEnhancer
-
-            self.denoiser = ZipEnhancer(zipenhancer_model_path)
-        else:
-            self.denoiser = None
         if optimize:
             print("Warm up VoxCPMModel...", file=sys.stderr)
             self.tts_model.generate(
@@ -104,8 +91,6 @@ class VoxCPM:
     def from_pretrained(
         cls,
         hf_model_id: str = "openbmb/VoxCPM2",
-        load_denoiser: bool = True,
-        zipenhancer_model_id: str = "iic/speech_zipenhancer_ans_multiloss_16k_base",
         cache_dir: str = None,
         local_files_only: bool = False,
         optimize: bool = True,
@@ -118,10 +103,7 @@ class VoxCPM:
 
         Args:
             hf_model_id: Explicit Hugging Face repository id (e.g. "org/repo") or local path.
-            load_denoiser: Whether to initialize the denoiser pipeline.
             optimize: Whether to optimize the model with torch.compile. True by default, but can be disabled for debugging.
-            zipenhancer_model_id: Denoiser model id or path for ModelScope
-                acoustic noise suppression.
             cache_dir: Custom cache directory for the snapshot.
             local_files_only: If True, only use local files and do not attempt
                 to download.
@@ -162,8 +144,6 @@ class VoxCPM:
 
         return cls(
             voxcpm_model_path=local_path,
-            zipenhancer_model_path=zipenhancer_model_id if load_denoiser else None,
-            enable_denoiser=load_denoiser,
             optimize=optimize,
             device=device,
             lora_config=lora_config,
@@ -188,7 +168,6 @@ class VoxCPM:
         min_len: int = 2,
         max_len: int = 4096,
         normalize: bool = False,
-        denoise: bool = False,
         retry_badcase: bool = True,
         retry_badcase_max_times: int = 3,
         retry_badcase_ratio_threshold: float = 6.0,
@@ -209,8 +188,6 @@ class VoxCPM:
             min_len: Minimum audio length.
             max_len: Maximum token length during generation.
             normalize: Whether to run text normalization before generation.
-            denoise: Whether to denoise the prompt/reference audio if a
-                denoiser is available.
             retry_badcase: Whether to retry badcase.
             retry_badcase_max_times: Maximum number of times to retry badcase.
             retry_badcase_ratio_threshold: Threshold for audio-to-text ratio.
@@ -245,18 +222,6 @@ class VoxCPM:
         try:
             actual_prompt_path = prompt_wav_path
             actual_ref_path = reference_wav_path
-
-            if denoise and self.denoiser is not None:
-                if prompt_wav_path is not None:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                        temp_files.append(tmp.name)
-                    self.denoiser.enhance(prompt_wav_path, output_path=temp_files[-1])
-                    actual_prompt_path = temp_files[-1]
-                if reference_wav_path is not None:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                        temp_files.append(tmp.name)
-                    self.denoiser.enhance(reference_wav_path, output_path=temp_files[-1])
-                    actual_ref_path = temp_files[-1]
 
             if actual_prompt_path is not None or actual_ref_path is not None:
                 if is_v2:

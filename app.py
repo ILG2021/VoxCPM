@@ -107,8 +107,6 @@ _I18N_TRANSLATIONS = {
         "generate_btn": "🔊 Generate Speech",
         "generated_audio_label": "Generated Audio",
         "advanced_settings_title": "⚙️ Advanced Settings",
-        "ref_denoise_label": "Reference audio enhancement",
-        "ref_denoise_info": "Apply ZipEnhancer denoising to the reference audio before cloning",
         "normalize_label": "Text normalization",
         "normalize_info": "Normalize numbers, dates, and abbreviations via wetext",
         "cfg_label": "CFG (guidance scale)",
@@ -130,8 +128,6 @@ _I18N_TRANSLATIONS = {
         "generate_btn": "🔊 开始生成",
         "generated_audio_label": "生成结果",
         "advanced_settings_title": "⚙️ 高级设置",
-        "ref_denoise_label": "参考音频降噪增强",
-        "ref_denoise_info": "克隆前使用 ZipEnhancer 对参考音频进行降噪处理",
         "normalize_label": "文本规范化",
         "normalize_info": "自动规范化数字、日期及缩写（基于 wetext）",
         "cfg_label": "CFG（引导强度）",
@@ -277,7 +273,6 @@ class VoxCPMDemo:
         prompt_text_clean: Optional[str],
         cfg_value_input: float,
         do_normalize: bool,
-        denoise: bool,
         inference_timesteps: int = 10,
     ) -> dict:
         generate_kwargs = dict(
@@ -286,7 +281,6 @@ class VoxCPMDemo:
             cfg_value=float(cfg_value_input),
             inference_timesteps=inference_timesteps,
             normalize=do_normalize,
-            denoise=denoise,
         )
         if prompt_text_clean and audio_path:
             generate_kwargs["prompt_wav_path"] = audio_path
@@ -301,7 +295,6 @@ class VoxCPMDemo:
         prompt_text: str = "",
         cfg_value_input: float = 2.0,
         do_normalize: bool = True,
-        denoise: bool = True,
         inference_timesteps: int = 10,
     ) -> Tuple[int, np.ndarray]:
         current_model = self.get_or_load_voxcpm()
@@ -333,7 +326,6 @@ class VoxCPMDemo:
             prompt_text_clean=prompt_text_clean,
             cfg_value_input=cfg_value_input,
             do_normalize=do_normalize,
-            denoise=denoise,
             inference_timesteps=inference_timesteps,
         )
         wav = current_model.generate(**generate_kwargs)
@@ -353,7 +345,6 @@ def create_demo_interface(demo: VoxCPMDemo):
         prompt_text_value: str,
         cfg_value: float,
         do_normalize: bool,
-        denoise: bool,
         dit_steps: int,
     ):
         actual_prompt_text = prompt_text_value.strip() if use_prompt_text else ""
@@ -365,7 +356,6 @@ def create_demo_interface(demo: VoxCPMDemo):
             prompt_text=actual_prompt_text,
             cfg_value_input=cfg_value,
             do_normalize=do_normalize,
-            denoise=denoise,
             inference_timesteps=int(dit_steps),
         )
         return (sr, wav_np)
@@ -437,12 +427,6 @@ def create_demo_interface(demo: VoxCPMDemo):
                 )
 
                 with gr.Accordion(I18N("advanced_settings_title"), open=False):
-                    DoDenoisePromptAudio = gr.Checkbox(
-                        value=False,
-                        label=I18N("ref_denoise_label"),
-                        elem_classes=["switch-toggle"],
-                        info=I18N("ref_denoise_info"),
-                    )
                     DoNormalizeText = gr.Checkbox(
                         value=False,
                         label=I18N("normalize_label"),
@@ -492,7 +476,6 @@ def create_demo_interface(demo: VoxCPMDemo):
                 prompt_text,
                 cfg_value,
                 DoNormalizeText,
-                DoDenoisePromptAudio,
                 dit_steps,
             ],
             outputs=[audio_output],

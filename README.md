@@ -1,15 +1,10 @@
 <h2 align="center">VoxCPM2: Tokenizer-Free TTS for Multilingual Speech Generation, Creative Voice Design, and True-to-Life Cloning</h2>
 
 <p align="center">
-  <b>English</b> | <a href="./README_zh.md">中文</a>
-</p>
-
-<p align="center">
   <a href="https://github.com/OpenBMB/VoxCPM/"><img src="https://img.shields.io/badge/Project%20Page-GitHub-blue" alt="Project Page"></a>
   <a href="https://huggingface.co/spaces/OpenBMB/VoxCPM-Demo"><img src="https://img.shields.io/badge/Live%20Playground-Demo-orange" alt="Live Playground"></a>
   <a href="https://voxcpm.readthedocs.io/en/latest/"><img src="https://img.shields.io/badge/Docs-ReadTheDocs-8CA1AF" alt="Documentation"></a>
   <a href="https://huggingface.co/openbmb/VoxCPM2"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-VoxCPM2-yellow" alt="Hugging Face"></a>
-  <a href="https://modelscope.cn/models/OpenBMB/VoxCPM2"><img src="https://img.shields.io/badge/ModelScope-VoxCPM2-purple" alt="ModelScope"></a>
   <a href="https://openbmb.github.io/voxcpm2-demopage/"><img src="https://img.shields.io/badge/DemoPage-Audio Samples-red" alt="DemoPage"></a>
   <a href="https://arxiv.org/abs/2606.06928"><img src="https://img.shields.io/badge/arXiv-VoxCPM2%20Technical%20Report-red" alt="VoxCPM2 Technical Report"></a>
 </p>
@@ -25,10 +20,6 @@
 <p align="center">
   👋 Join our community for discussion and support!
   <br>
-  <a href="./assets/feishu-group.png" style="display:inline-block;vertical-align:middle; margin-left: 10px;">
-    <img src="./assets/feishu-logo.png" width="16" height="16" style="vertical-align:middle;"> Feishu
-  </a>
-  &nbsp;|&nbsp;
   <a href="https://discord.gg/KZUx7tVNwz" style="display:inline-block;vertical-align:middle;">
     <img src="./assets/discord-logo.png" width="16" height="16" style="vertical-align:middle;"> Discord
   </a>
@@ -111,28 +102,6 @@ wav = model.generate(
 )
 sf.write("demo.wav", wav, model.tts_model.sample_rate)
 print("saved: demo.wav")
-```
-
-If you prefer downloading from ModelScope first, you can use:
-
-```bash
-pip install modelscope
-```
-
-```python
-from modelscope import snapshot_download
-snapshot_download("OpenBMB/VoxCPM2", local_dir='./pretrained_models/VoxCPM2') # specify the local directory to save the model
-
-from voxcpm import VoxCPM
-import soundfile as sf
-model = VoxCPM.from_pretrained("./pretrained_models/VoxCPM2", load_denoiser=False)
-
-wav = model.generate(
-    text="VoxCPM2 is the current recommended release for realistic multilingual speech synthesis.",
-    cfg_value=2.0,
-    inference_timesteps=10,
-)
-sf.write("demo.wav", wav, model.tts_model.sample_rate)
 ```
 
 #### 🎨 Voice Design
@@ -314,7 +283,7 @@ curl http://localhost:8000/v1/audio/speech \
 | **RTF (RTX 4090)**              | ~0.30                                                                                                | ~0.15                                                                                                    | ~0.17                                                                                                        |
 | **RTF in Nano-VLLM (RTX 4090)** | ~0.13                                                                                                | ~0.08                                                                                                    | ~0.10                                                                                                        |
 | **VRAM**                        | ~8 GB                                                                                                | ~6 GB                                                                                                    | ~5 GB                                                                                                        |
-| **Weights**                     | [🤗 HF](https://huggingface.co/openbmb/VoxCPM2) / [MS](https://modelscope.cn/models/OpenBMB/VoxCPM2) | [🤗 HF](https://huggingface.co/openbmb/VoxCPM1.5) / [MS](https://modelscope.cn/models/OpenBMB/VoxCPM1.5) | [🤗 HF](https://huggingface.co/openbmb/VoxCPM-0.5B) / [MS](https://modelscope.cn/models/OpenBMB/VoxCPM-0.5B) |
+| **Weights**                     | [🤗 HF](https://huggingface.co/openbmb/VoxCPM2) | [🤗 HF](https://huggingface.co/openbmb/VoxCPM1.5) | [🤗 HF](https://huggingface.co/openbmb/VoxCPM-0.5B) |
 | **Technical Report**            | [arXiv](https://arxiv.org/abs/2606.06928)                                                            | —                                                                                                        | [arXiv](https://arxiv.org/abs/2509.24650) [ICLR 2026](https://openreview.net/forum?id=h5KLpGoqzC)            |
 | **Demo Page**                   | [Audio Samples](https://openbmb.github.io/voxcpm2-demopage)                                          | —                                                                                                        | [Audio Samples](https://openbmb.github.io/VoxCPM-demopage)                                                   |
 
@@ -623,7 +592,7 @@ VoxCPM model weights and code are open-sourced under the [Apache-2.0](LICENSE) l
 
 ## Institutions
 
-[ModelBest](https://modelbest.cn/)     [THUHCSI](https://github.com/thuhcsi)
+ModelBest &nbsp;&nbsp;&nbsp; [THUHCSI](https://github.com/thuhcsi)
 
 ## ⭐ Star History
 

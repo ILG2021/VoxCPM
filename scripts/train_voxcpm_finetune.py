@@ -57,8 +57,9 @@ def train(
     save_interval: int = 10_000,
     learning_rate: float = 1e-4,
     weight_decay: float = 1e-2,
-    warmup_steps: int = 1_000,
+    warmup_steps: float = 1_000,
     max_steps: int = 100_000,
+    epochs: float = 0.0,
     max_batch_tokens: int = 0,
     save_path: str = "checkpoints",
     tensorboard: str = "",
@@ -89,6 +90,17 @@ def train(
 
     writer = SummaryWriter(log_dir=str(tb_dir)) if accelerator.rank == 0 else None
     tracker = TrainingTracker(writer=writer, log_file=str(save_dir / "train.log"), rank=accelerator.rank)
+
+    original_pretrained_path = pretrained_path
+    if not os.path.isdir(pretrained_path):
+        if accelerator.rank == 0:
+            print(f"Path '{pretrained_path}' not found locally. Attempting Hugging Face Hub download...", file=sys.stderr)
+        if accelerator.rank == 0:
+            from huggingface_hub import snapshot_download
+            snapshot_download(repo_id=pretrained_path)
+        accelerator.barrier()
+        from huggingface_hub import snapshot_download
+        pretrained_path = snapshot_download(repo_id=pretrained_path)
 
     # Auto-detect model architecture from config.json
     with open(os.path.join(pretrained_path, "config.json"), "r", encoding="utf-8") as _f:
@@ -174,6 +186,17 @@ def train(
         else None
     )
 
+    if epochs > 0:
+        import math
+        batches_per_process = len(train_loader)
+        opt_steps_per_epoch = max(1, batches_per_process // grad_accum_steps)
+        calculated_iters = math.ceil(opt_steps_per_epoch * epochs)
+        if accelerator.rank == 0:
+            tracker.print(f"Calculated num_iters = {calculated_iters} from {epochs} epochs "
+                          f"({batches_per_process} micro-batches per process / {grad_accum_steps} accum steps = {opt_steps_per_epoch} opt steps/epoch).")
+        num_iters = calculated_iters
+        max_steps = calculated_iters
+
     batch_processor = BatchProcessor(
         config=base_model.config,
         audio_vae=base_model.audio_vae,
@@ -206,9 +229,14 @@ def train(
     # - num_warmup_steps: warmup steps
     # - num_training_steps: total training steps (outer step count)
     total_training_steps = max_steps if max_steps > 0 else num_iters
+    if 0.0 < warmup_steps < 1.0:
+        actual_warmup_steps = int(total_training_steps * warmup_steps)
+    else:
+        actual_warmup_steps = int(warmup_steps)
+        
     scheduler = get_cosine_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=warmup_steps,
+        num_warmup_steps=actual_warmup_steps,
         num_training_steps=total_training_steps,
     )
 
@@ -235,6 +263,7 @@ def train(
         _dist=distribute,
         _resume=resume,
         _rank=accelerator.rank,
+        _orig_pretrained=original_pretrained_path,
     ):
         try:
             cur_step = int(_resume.get("step", start_step))
@@ -243,7 +272,7 @@ def train(
         if _rank == 0:
             print(f"Signal {signum} received. Saving checkpoint at step {cur_step} ...", file=sys.stderr)
             try:
-                save_checkpoint(_model, _optim, _sched, _save_dir, cur_step, _pretrained, _hf_id, _dist)
+                save_checkpoint(_model, _optim, _sched, _save_dir, cur_step, _pretrained, _hf_id, _dist, _orig_pretrained)
                 print("Checkpoint saved. Exiting.", file=sys.stderr)
             except Exception as e:
                 print(f"Error saving checkpoint on signal: {e}", file=sys.stderr)
@@ -354,10 +383,10 @@ def train(
                 )
 
             if (step % save_interval == 0 or step == num_iters - 1) and accelerator.rank == 0:
-                save_checkpoint(model, optimizer, scheduler, save_dir, step, pretrained_path, hf_model_id, distribute)
+                save_checkpoint(model, optimizer, scheduler, save_dir, step, pretrained_path, hf_model_id, distribute, original_pretrained_path)
 
     if accelerator.rank == 0:
-        save_checkpoint(model, optimizer, scheduler, save_dir, num_iters, pretrained_path, hf_model_id, distribute)
+        save_checkpoint(model, optimizer, scheduler, save_dir, num_iters, pretrained_path, hf_model_id, distribute, original_pretrained_path)
     if writer:
         writer.close()
 
@@ -751,6 +780,7 @@ def save_checkpoint(
     pretrained_path: str = None,
     hf_model_id: str = "",
     distribute: bool = False,
+    original_pretrained_path: str = None,
 ):
     """
     Save checkpoint with different strategies for full finetune vs LoRA:
@@ -777,8 +807,8 @@ def save_checkpoint(
             torch.save({"state_dict": state_dict}, folder / "lora_weights.ckpt")
 
         # Save LoRA config and base model path to a separate JSON file
-        # If distribute=True, save hf_model_id; otherwise save local pretrained_path
-        base_model_to_save = hf_model_id if distribute else (str(pretrained_path) if pretrained_path else None)
+        # If distribute=True, save hf_model_id; otherwise save original_pretrained_path (or local resolved path if original not provided)
+        base_model_to_save = hf_model_id if distribute else (original_pretrained_path or str(pretrained_path) if pretrained_path else None)
         lora_info = {
             "base_model": base_model_to_save,
             "lora_config": lora_cfg.model_dump() if hasattr(lora_cfg, "model_dump") else vars(lora_cfg),

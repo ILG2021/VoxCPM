@@ -1,0 +1,26 @@
+pretrained_path: openbmb/VoxCPM2            # 预训练模型的目录，包含 config.json 和 model.safetensors
+train_manifest:  train_latents.jsonl
+val_manifest:    # 强烈推荐配置 — 用于开启早停（early stopping）
+
+sample_rate:        16000   # AudioVAE 编码器的输入采样率（注意：不是 48kHz 的输出采样率）
+out_sample_rate:    48000   # AudioVAE 解码器的输出采样率；仅在推理时使用，训练时不使用
+batch_size:         2
+grad_accum_steps:   8       # 有效批次大小 = batch_size × grad_accum_steps = 16
+num_workers:        8
+
+epochs:             3       # 自动计算步数
+log_interval:       10
+valid_interval:     100
+save_interval:      100
+
+learning_rate:  1.0e-5      # 约为 LoRA 学习率的 1/10，以避免灾难性遗忘
+weight_decay:   0.01
+warmup_steps:   0.1         # 设为 0.0~1.0 之间的小数时，表示占总步数的百分比（如 0.1 即 10%）
+max_batch_tokens: 8192      # 过滤掉 token 数量 > max_batch_tokens // batch_size 的长音频
+max_grad_norm: 1.0          # 梯度裁剪最大模长；0 表示禁用
+save_path:   checkpoints/ljspeech_full
+tensorboard: checkpoints/ljspeech_full/logs
+
+lambdas:
+  loss/diff: 1.0
+  loss/stop: 1.0

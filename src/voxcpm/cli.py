@@ -173,10 +173,6 @@ def load_model(args):
 
     print("Loading VoxCPM model...", file=sys.stderr)
 
-    zipenhancer_path = getattr(args, "zipenhancer_path", None) or os.environ.get(
-        "ZIPENHANCER_MODEL_PATH", None
-    )
-
     # Build LoRA config if provided
     lora_config = None
     lora_weights_path = getattr(args, "lora_path", None)
@@ -203,8 +199,6 @@ def load_model(args):
         try:
             model = VoxCPM(
                 voxcpm_model_path=args.model_path,
-                zipenhancer_model_path=zipenhancer_path,
-                enable_denoiser=not args.no_denoiser,
                 optimize=not args.no_optimize,
                 device=args.device,
                 lora_config=lora_config,
@@ -220,8 +214,6 @@ def load_model(args):
     try:
         model = VoxCPM.from_pretrained(
             hf_model_id=args.hf_model_id,
-            load_denoiser=not args.no_denoiser,
-            zipenhancer_model_id=zipenhancer_path,
             cache_dir=args.cache_dir,
             local_files_only=args.local_files_only,
             optimize=not args.no_optimize,
@@ -259,8 +251,6 @@ def _run_single(args, parser, *, text: str, output: str, prompt_text: str | None
         cfg_value=args.cfg_value,
         inference_timesteps=args.inference_timesteps,
         normalize=args.normalize,
-        denoise=args.denoise
-        and (args.prompt_audio is not None or args.reference_audio is not None),
     )
 
     import soundfile as sf
@@ -346,8 +336,6 @@ def cmd_batch(args, parser):
                 cfg_value=args.cfg_value,
                 inference_timesteps=args.inference_timesteps,
                 normalize=args.normalize,
-                denoise=args.denoise
-                and (prompt_audio_path is not None or reference_audio_path is not None),
             )
 
             output_file = output_dir / f"output_{i:03d}.wav"
@@ -409,11 +397,6 @@ def _add_prompt_reference_args(parser):
         "-ra",
         help="Reference audio for voice cloning (VoxCPM2 only)",
     )
-    parser.add_argument(
-        "--denoise",
-        action="store_true",
-        help="Enable prompt/reference speech enhancement",
-    )
 
 
 def _add_model_args(parser):
@@ -437,17 +420,9 @@ def _add_model_args(parser):
         "--local-files-only", action="store_true", help="Disable network access"
     )
     parser.add_argument(
-        "--no-denoiser", action="store_true", help="Disable denoiser model loading"
-    )
-    parser.add_argument(
         "--no-optimize",
         action="store_true",
         help="Disable model optimization during loading",
-    )
-    parser.add_argument(
-        "--zipenhancer-path",
-        type=str,
-        help="ZipEnhancer model id or local path (or env ZIPENHANCER_MODEL_PATH)",
     )
 
 

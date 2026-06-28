@@ -78,6 +78,8 @@ class AudioFeatureProcessingPacker:
         dataset_ids: torch.Tensor,
         is_prompts: List[bool],
         ref_audio_tokens: Optional[torch.Tensor] = None,
+        audio_latents: Optional[List[torch.Tensor]] = None,
+        ref_audio_latents: Optional[List[Optional[torch.Tensor]]] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Padding-based batching: each sample in the input batch is processed
@@ -105,20 +107,27 @@ class AudioFeatureProcessingPacker:
         audio_duration_consumed = torch.zeros(dataset_cnt, dtype=torch.float32, device=device)
         text_token_consumed = torch.zeros(dataset_cnt, dtype=torch.float32, device=device)
 
-        ref_iter = ref_audio_tokens if ref_audio_tokens is not None else [None] * audio_tokens.size(0)
+        ref_iter = ref_audio_tokens if ref_audio_tokens is not None else [None] * len(text_tokens)
+        latent_iter = audio_latents if audio_latents is not None else [None] * len(text_tokens)
+        ref_latent_iter = ref_audio_latents if ref_audio_latents is not None else [None] * len(text_tokens)
 
-        for audio_token, text_token, task_id, dataset_idx, is_prompt, ref_token in zip(
-            audio_tokens, text_tokens, task_ids.tolist(), dataset_ids.tolist(), is_prompts, ref_iter
+        for audio_token, text_token, task_id, dataset_idx, is_prompt, ref_token, latent_feat, ref_latent_feat in zip(
+            audio_tokens, text_tokens, task_ids.tolist(), dataset_ids.tolist(), is_prompts, ref_iter, latent_iter, ref_latent_iter
         ):
-            unpad_audio_token = self.unpad_audio_tokens(audio_token).to(torch.float32)
+            unpad_audio_token = self.unpad_audio_tokens(audio_token).to(torch.float32) if latent_feat is None else None
             unpad_text_token = self.unpad_text_tokens(text_token)
             usage = self.id_to_task[task_id]
 
             has_ref = False
-            if ref_token is not None:
+            if ref_latent_feat is not None:
+                has_ref = True
+                unpad_ref_token = None
+            elif ref_token is not None:
                 unpad_ref_token = self.unpad_audio_tokens(ref_token).to(torch.float32)
                 if unpad_ref_token.numel() > 0:
                     has_ref = True
+            else:
+                unpad_ref_token = None
 
             if has_ref:
                 (
@@ -130,7 +139,10 @@ class AudioFeatureProcessingPacker:
                     labels,
                     audio_duration,
                     text_token_count,
-                ) = self.process_tts_data_with_ref(unpad_ref_token, unpad_audio_token, unpad_text_token)
+                ) = self.process_tts_data_with_ref(
+                    unpad_ref_token, unpad_audio_token, unpad_text_token,
+                    audio_latent=latent_feat, ref_audio_latent=ref_latent_feat
+                )
             else:
                 (
                     packed_text,
@@ -141,7 +153,9 @@ class AudioFeatureProcessingPacker:
                     labels,
                     audio_duration,
                     text_token_count,
-                ) = self.process_functions[usage](unpad_audio_token, unpad_text_token, is_prompt)
+                ) = self.process_functions[usage](
+                    unpad_audio_token, unpad_text_token, is_prompt, audio_latent=latent_feat
+                )
 
             audio_duration_consumed[dataset_idx] += audio_duration
             text_token_consumed[dataset_idx] += text_token_count
@@ -246,7 +260,7 @@ class AudioFeatureProcessingPacker:
         audio_feats = rearrange(audio_feats, "b (t p) c -> b t p c", p=self.patch_size)
         return audio_feats, audio_duration
 
-    def process_tts_data(self, audio_token: torch.Tensor, text_token: torch.Tensor, is_prompt: bool = False):
+    def process_tts_data(self, audio_token: torch.Tensor, text_token: torch.Tensor, is_prompt: bool = False, audio_latent: Optional[torch.Tensor] = None):
         text_token_info = torch.cat(
             [
                 text_token,
@@ -260,8 +274,14 @@ class AudioFeatureProcessingPacker:
         )
         text_token_count = len(text_token)
         text_length = text_token_info.shape[0]
-        audio_feat_info, audio_duration = self.extract_audio_feats(audio_token)
-        audio_feat_info = audio_feat_info.squeeze(0)
+        
+        if audio_latent is not None:
+            audio_feat_info = audio_latent
+            audio_duration = (audio_feat_info.shape[0] * self.patch_size) / 25.0
+        else:
+            audio_feat_info, audio_duration = self.extract_audio_feats(audio_token)
+            audio_feat_info = audio_feat_info.squeeze(0)
+            
         audio_length = audio_feat_info.shape[0]
 
         text_pad_token = torch.zeros(audio_length, dtype=torch.int32, device=text_token.device)
@@ -324,6 +344,8 @@ class AudioFeatureProcessingPacker:
         ref_audio_token: torch.Tensor,
         target_audio_token: torch.Tensor,
         text_token: torch.Tensor,
+        audio_latent: Optional[torch.Tensor] = None,
+        ref_audio_latent: Optional[torch.Tensor] = None,
     ):
         """
         Build a training sequence with reference audio prepended:
@@ -335,12 +357,20 @@ class AudioFeatureProcessingPacker:
         device = text_token.device
         txt_len = len(text_token)
 
-        ref_feats, ref_duration = self.extract_audio_feats(ref_audio_token)
-        ref_feats = ref_feats.squeeze(0)  # [R, P, D]
+        if ref_audio_latent is not None:
+            ref_feats = ref_audio_latent
+            ref_duration = (ref_feats.shape[0] * self.patch_size) / 25.0
+        else:
+            ref_feats, ref_duration = self.extract_audio_feats(ref_audio_token)
+            ref_feats = ref_feats.squeeze(0)  # [R, P, D]
         ref_len = ref_feats.shape[0]
 
-        tgt_feats, tgt_duration = self.extract_audio_feats(target_audio_token)
-        tgt_feats = tgt_feats.squeeze(0)  # [A, P, D]
+        if audio_latent is not None:
+            tgt_feats = audio_latent
+            tgt_duration = (tgt_feats.shape[0] * self.patch_size) / 25.0
+        else:
+            tgt_feats, tgt_duration = self.extract_audio_feats(target_audio_token)
+            tgt_feats = tgt_feats.squeeze(0)  # [A, P, D]
         tgt_len = tgt_feats.shape[0]
 
         feat_shape = (self.patch_size, ref_feats.size(-1))
