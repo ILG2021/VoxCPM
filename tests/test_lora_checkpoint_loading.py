@@ -52,8 +52,7 @@ def bootstrap_repo_modules(monkeypatch):
     pydantic.BaseModel = BaseModel
     monkeypatch.setitem(sys.modules, "pydantic", pydantic)
 
-    torchaudio = types.ModuleType("torchaudio")
-    monkeypatch.setitem(sys.modules, "torchaudio", torchaudio)
+
 
     librosa = types.ModuleType("librosa")
     librosa.effects = types.SimpleNamespace(trim=lambda *a, **k: (None, (0, 0)))

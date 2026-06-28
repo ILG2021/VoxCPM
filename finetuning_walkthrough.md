@@ -2,7 +2,7 @@
 
 虚拟环境
 ```bash
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -e .
 ```
 

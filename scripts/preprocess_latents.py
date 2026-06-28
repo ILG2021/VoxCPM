@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import torch
-import torchaudio
+import librosa
 from tqdm import tqdm
 
 from huggingface_hub import snapshot_download
@@ -74,12 +74,8 @@ def main():
                 
             # Load and resample audio
             try:
-                wav, sr = torchaudio.load(audio_path, backend="soundfile")
-                if wav.size(0) > 1:
-                    wav = wav.mean(dim=0, keepdim=True)  # Convert to mono
-                if sr != expected_sr:
-                    resampler = torchaudio.transforms.Resample(sr, expected_sr)
-                    wav = resampler(wav)
+                wav_np, _ = librosa.load(audio_path, sr=expected_sr, mono=True)
+                wav = torch.from_numpy(wav_np).unsqueeze(0)
             except Exception as e:
                 print(f"Failed to load audio {audio_path}: {e}")
                 continue

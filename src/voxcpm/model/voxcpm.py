@@ -24,7 +24,7 @@ from typing import Tuple, Union, Generator, List, Optional
 
 import torch
 import torch.nn as nn
-import torchaudio
+import librosa
 import warnings
 from einops import rearrange
 from pydantic import BaseModel
@@ -407,12 +407,8 @@ class VoxCPMModel(nn.Module):
             )
             text_length = text_token.shape[0]
 
-            audio, sr = torchaudio.load(prompt_wav_path, backend="soundfile")
-            if audio.size(0) > 1:
-                audio = audio.mean(dim=0, keepdim=True)
-
-            if sr != self.sample_rate:
-                audio = torchaudio.functional.resample(audio, sr, self.sample_rate)
+            audio_np, _ = librosa.load(prompt_wav_path, sr=self.sample_rate, mono=True)
+            audio = torch.from_numpy(audio_np).unsqueeze(0)
 
             patch_len = self.patch_size * self.chunk_size
 
@@ -512,13 +508,8 @@ class VoxCPMModel(nn.Module):
         if not prompt_text or not prompt_wav_path:
             raise ValueError("prompt_text and prompt_wav_path are required")
 
-        # load audio
-        audio, sr = torchaudio.load(prompt_wav_path, backend="soundfile")
-        if audio.size(0) > 1:
-            audio = audio.mean(dim=0, keepdim=True)
-
-        if sr != self.sample_rate:
-            audio = torchaudio.functional.resample(audio, sr, self.sample_rate)
+        audio_np, _ = librosa.load(prompt_wav_path, sr=self.sample_rate, mono=True)
+        audio = torch.from_numpy(audio_np).unsqueeze(0)
 
         patch_len = self.patch_size * self.chunk_size
 

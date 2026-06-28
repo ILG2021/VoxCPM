@@ -603,11 +603,8 @@ def generate_sample_audio(
                 ref_audio_np = np.array(sample["audio"]["array"], dtype=np.float32)
                 ref_sr = sample["audio"].get("sampling_rate", sample_rate)
                 if ref_sr != sample_rate:
-                    import torchaudio.functional as F
-
-                    ref_audio_np = (
-                        F.resample(torch.from_numpy(ref_audio_np).unsqueeze(0), ref_sr, sample_rate).squeeze(0).numpy()
-                    )
+                    import librosa
+                    ref_audio_np = librosa.resample(ref_audio_np, orig_sr=ref_sr, target_sr=sample_rate)
                 log(f"[Audio] Loaded reference audio for sample {i}: duration={len(ref_audio_np)/sample_rate:.2f}s")
         except Exception as e:
             log(f"[Warning] Failed to load reference audio: {e}")
