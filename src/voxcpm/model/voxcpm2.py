@@ -296,6 +296,8 @@ class VoxCPM2Model(nn.Module):
 
     def gradient_checkpointing_enable(self):
         for module in self.modules():
+            if module is self:
+                continue
             if hasattr(module, "gradient_checkpointing_enable"):
                 module.gradient_checkpointing_enable()
 
