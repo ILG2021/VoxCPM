@@ -70,6 +70,8 @@ def train(
     # Distribution options (for LoRA checkpoints)
     hf_model_id: str = "",  # HuggingFace model ID (e.g., "openbmb/VoxCPM1.5")
     distribute: bool = False,  # If True, save hf_model_id as base_model; otherwise save pretrained_path
+    gradient_checkpointing: bool = True,
+    use_8bit_adam: bool = True,
 ):
     _ = config_path
 
@@ -214,12 +216,31 @@ def train(
     unwrapped_model = accelerator.unwrap(model)
     unwrapped_model.train()
 
+    if gradient_checkpointing:
+        if accelerator.rank == 0:
+            print("Enabling gradient checkpointing...", file=sys.stderr)
+        if hasattr(unwrapped_model, "gradient_checkpointing_enable"):
+            unwrapped_model.gradient_checkpointing_enable()
+        else:
+            print("Warning: Model does not support gradient checkpointing", file=sys.stderr)
+
     # Only print param info on rank 0 to avoid cluttered output
     if accelerator.rank == 0:
         for name, param in model.named_parameters():
             print(name, param.requires_grad, file=sys.stderr)
 
-    optimizer = AdamW(
+    if use_8bit_adam:
+        try:
+            import bitsandbytes as bnb
+            OptimizerClass = bnb.optim.AdamW8bit
+            if accelerator.rank == 0:
+                print("Using bitsandbytes 8-bit AdamW optimizer.", file=sys.stderr)
+        except ImportError:
+            raise ImportError("Please install bitsandbytes: pip install bitsandbytes")
+    else:
+        OptimizerClass = AdamW
+
+    optimizer = OptimizerClass(
         (p for p in model.parameters() if p.requires_grad),
         lr=learning_rate,
         weight_decay=weight_decay,

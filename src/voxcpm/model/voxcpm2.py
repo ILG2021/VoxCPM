@@ -294,6 +294,11 @@ class VoxCPM2Model(nn.Module):
             print(f"Warning: torch.compile disabled - {e}", file=sys.stderr)
         return self
 
+    def gradient_checkpointing_enable(self):
+        for module in self.modules():
+            if hasattr(module, "gradient_checkpointing_enable"):
+                module.gradient_checkpointing_enable()
+
     def forward(
         self,
         text_tokens: torch.Tensor,
