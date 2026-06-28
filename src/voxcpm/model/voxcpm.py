@@ -407,7 +407,7 @@ class VoxCPMModel(nn.Module):
             )
             text_length = text_token.shape[0]
 
-            audio, sr = torchaudio.load(prompt_wav_path)
+            audio, sr = torchaudio.load(prompt_wav_path, backend="soundfile")
             if audio.size(0) > 1:
                 audio = audio.mean(dim=0, keepdim=True)
 
@@ -513,7 +513,7 @@ class VoxCPMModel(nn.Module):
             raise ValueError("prompt_text and prompt_wav_path are required")
 
         # load audio
-        audio, sr = torchaudio.load(prompt_wav_path)
+        audio, sr = torchaudio.load(prompt_wav_path, backend="soundfile")
         if audio.size(0) > 1:
             audio = audio.mean(dim=0, keepdim=True)
 

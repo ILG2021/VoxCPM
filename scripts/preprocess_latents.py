@@ -74,7 +74,7 @@ def main():
                 
             # Load and resample audio
             try:
-                wav, sr = torchaudio.load(audio_path)
+                wav, sr = torchaudio.load(audio_path, backend="soundfile")
                 if wav.size(0) > 1:
                     wav = wav.mean(dim=0, keepdim=True)  # Convert to mono
                 if sr != expected_sr:
